@@ -457,7 +457,7 @@ function scoreIt(pred,actual,rules){
   return(sd||wg===pg)?rules.winnerPlus:rules.winnerOnly;
 }
 function totalPts(pk){return MATCHES.reduce((s,m)=>{const p=scoreIt(state.preds[pk]?.[m.id],state.results[m.id],state.rules);return s+(p||0);},0);}
-function isLocked(m){if(m.retro)return false;return Date.now()>=(new Date(m.kickoff).getTime()-LOCK_MS);}
+function isLocked(m){if(m.retro)return true;return Date.now()>=(new Date(m.kickoff).getTime()-LOCK_MS);}
 function hasResult(mid){const r=state.results[mid];return r&&r.home!=null&&r.away!=null;}
 function fmtKO(iso){try{return new Date(iso).toLocaleString("pt-PT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",timeZone:"Europe/Lisbon"});}catch(e){return iso;}}
 
@@ -532,7 +532,7 @@ function renderMatches(){
       const locked=isLocked(m),hr=hasResult(m.id);
       const pred=activePlayer?state.preds[activePlayer]?.[m.id]:null;
       const predOk=pred&&pred.home!==""&&pred.home!=null&&pred.away!=null;
-      const editable=activePlayer&&!locked;
+      const editable=activePlayer&&!locked&&!m.retro;
       let mid="";
       if(editable){
         const hv=pred?.home??"",av=pred?.away??"";
