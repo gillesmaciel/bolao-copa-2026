@@ -285,6 +285,7 @@
   <button class="sbtn" onclick="saveRules()">Guardar pontuação</button>
   <div class="asect">Resultados oficiais</div>
   <div id="results-admin"></div>
+  <button class="sbtn" style="margin-top:12px;width:100%;padding:14px;font-size:14px" onclick="saveNow().then(()=>showToast('✅ Resultados guardados!'))">💾 Guardar todos os resultados</button>
 </div>
 
 <div class="footer">Sincronizado a cada 15s entre os dois dispositivos · Copa 2026</div>
@@ -424,48 +425,74 @@ let activePlayer=null,currentTab="grupos",adminOpen=false,pendingSave=null;
 async function loadState(){
   setSync("A carregar…");
   try{
-    const r=await fetch(`${API_URL}/latest`,{headers:{"X-Master-Key":API_KEY}});
-    const j=await r.json();
-    const d=j.record;
-    // Só aplica se tiver dados reais (players definidos e diferentes do default vazio)
-    if(d && d.players && d.preds && !d.bolao){
-      if(d.players)state.players=d.players;
-      if(d.preds)state.preds={p1:d.preds.p1||{},p2:d.preds.p2||{}};
-      if(d.results)state.results=d.results;
-      if(d.rules)state.rules=d.rules;
+    const r = await fetch(API_URL+"/latest",{headers:{"X-Master-Key":API_KEY}});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const j = await r.json();
+    const d = j.record;
+    if(d && d.players && d.preds){
+      state.players = d.players;
+      state.preds   = {p1:d.preds.p1||{}, p2:d.preds.p2||{}};
+      state.results = d.results||{};
+      state.rules   = d.rules||state.rules;
     } else {
-      // JSONBin vazio ou com dado inicial — guarda o estado inicial imediatamente
-      await saveState();
+      // Bin vazio — gravar estado inicial
+      await saveNow();
     }
     setSync("");
-  }catch(e){setSync("⚠️ Sem ligação");}
+  } catch(e){
+    setSync("⚠️ Sem ligação — a trabalhar offline");
+  }
   render();
 }
-function applyR(d){
-  if(!d||d.bolao===true)return;
-  if(d.players)state.players=d.players;
-  if(d.preds)state.preds={p1:d.preds.p1||{},p2:d.preds.p2||{}};
-  if(d.results)state.results=d.results;
-  if(d.rules)state.rules=d.rules;
-}
-async function saveState(){
+
+async function saveNow(){
   setSync("A guardar…");
   try{
-    await fetch(API_URL,{method:"PUT",headers:{"Content-Type":"application/json","X-Master-Key":API_KEY},body:JSON.stringify(state)});
+    const r = await fetch(API_URL,{
+      method:"PUT",
+      headers:{"Content-Type":"application/json","X-Master-Key":API_KEY},
+      body: JSON.stringify(state)
+    });
+    if(!r.ok) throw new Error("HTTP "+r.status);
     setSync("✓ Guardado");
-    setTimeout(()=>setSync(""),2000);
-  }catch(e){setSync("⚠️ Erro ao guardar");}
+    setTimeout(()=>setSync(""),2500);
+    return true;
+  } catch(e){
+    setSync("⚠️ Erro ao guardar: "+e.message);
+    return false;
+  }
 }
-function scheduleSave(){if(pendingSave)clearTimeout(pendingSave);pendingSave=setTimeout(saveState,500);}
+
+async function saveState(){ return saveNow(); }
+
+function scheduleSave(){
+  if(pendingSave) clearTimeout(pendingSave);
+  pendingSave = setTimeout(saveNow, 600);
+}
+
 function setSync(m){document.getElementById("syncbar").textContent=m;}
+
+// Sincronização a cada 20s — só actualiza se a versão remota for mais recente
+let lastSyncVersion = 0;
 setInterval(async()=>{
   try{
-    const r=await fetch(`${API_URL}/latest`,{headers:{"X-Master-Key":API_KEY}});
-    const j=await r.json();
-    const d=j.record;
-    if(d&&d.players&&!d.bolao){applyR(d);render();}
-  }catch(e){}
-},15000);
+    const r = await fetch(API_URL+"/latest",{headers:{"X-Master-Key":API_KEY}});
+    if(!r.ok) return;
+    const j = await r.json();
+    const v = j.metadata?.version||0;
+    if(v > lastSyncVersion){
+      lastSyncVersion = v;
+      const d = j.record;
+      if(d && d.players && d.preds){
+        state.players = d.players;
+        state.preds   = {p1:d.preds.p1||{}, p2:d.preds.p2||{}};
+        state.results = d.results||{};
+        state.rules   = d.rules||state.rules;
+        render();
+      }
+    }
+  } catch(e){}
+}, 20000);
 
 // ── PONTUAÇÃO ────────────────────────────────────────────────────────────────
 function scoreIt(pred,actual,rules){
