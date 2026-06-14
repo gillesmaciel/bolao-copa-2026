@@ -286,15 +286,17 @@
   <div class="asect">Resultados oficiais</div>
   <div id="results-admin"></div>
   <button class="sbtn" style="margin-top:12px;width:100%;padding:14px;font-size:14px" onclick="saveNow().then(()=>showToast('✅ Resultados guardados!'))">💾 Guardar todos os resultados</button>
+
 </div>
 
 <div class="footer">Sincronizado a cada 15s entre os dois dispositivos · Copa 2026</div>
 <div class="toast" id="toast"></div>
 
 <script>
-const BIN_ID  = "6a2dc716f5f4af5e29ed63dd";
-const API_KEY = "$2a$10$HA1lbiySj3wV9XxYm/jsyuqBbxppHeegoXU407FWW0C2A7aPq33bO";
-const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+const SB_URL = "https://xxhxewqxxrsilyfsafki.supabase.co";
+const SB_KEY = "sb_publishable_GLAPK6DBZ6mm4jGkzDJYsA_sTAZsTv0";
+const SB_API = SB_URL + "/rest/v1/bolao";
+const SB_HDR = {"Content-Type":"application/json","apikey":SB_KEY,"Authorization":"Bearer "+SB_KEY};
 
 // ── JOGOS ────────────────────────────────────────────────────────────────────
 const MATCHES = [
@@ -425,22 +427,24 @@ let activePlayer=null,currentTab="grupos",adminOpen=false,pendingSave=null;
 async function loadState(){
   setSync("A carregar…");
   try{
-    const r = await fetch(API_URL+"/latest",{headers:{"X-Master-Key":API_KEY}});
+    const r = await fetch(SB_API+"?id=eq.estado&select=dados", {
+      headers: SB_HDR
+    });
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j = await r.json();
-    const d = j.record;
-    if(d && d.players && d.preds){
+    if(j && j.length > 0 && j[0].dados && j[0].dados.players){
+      const d = j[0].dados;
       state.players = d.players;
-      state.preds   = {p1:d.preds.p1||{}, p2:d.preds.p2||{}};
+      state.preds   = {p1:d.preds?.p1||{}, p2:d.preds?.p2||{}};
       state.results = d.results||{};
       state.rules   = d.rules||state.rules;
     } else {
-      // Bin vazio — gravar estado inicial
+      // Tabela vazia — guardar estado inicial
       await saveNow();
     }
     setSync("");
   } catch(e){
-    setSync("⚠️ Sem ligação — a trabalhar offline");
+    setSync("⚠️ Erro: "+e.message);
   }
   render();
 }
@@ -448,12 +452,15 @@ async function loadState(){
 async function saveNow(){
   setSync("A guardar…");
   try{
-    const r = await fetch(API_URL,{
-      method:"PUT",
-      headers:{"Content-Type":"application/json","X-Master-Key":API_KEY},
-      body: JSON.stringify(state)
+    const r = await fetch(SB_API, {
+      method: "POST",
+      headers: {...SB_HDR, "Prefer":"resolution=merge-duplicates"},
+      body: JSON.stringify({id:"estado", dados: state, updated_at: new Date().toISOString()})
     });
-    if(!r.ok) throw new Error("HTTP "+r.status);
+    if(!r.ok){
+      const err = await r.text();
+      throw new Error("HTTP "+r.status+": "+err);
+    }
     setSync("✓ Guardado");
     setTimeout(()=>setSync(""),2500);
     return true;
@@ -472,29 +479,31 @@ function scheduleSave(){
 
 function setSync(m){document.getElementById("syncbar").textContent=m;}
 
-// Sincronização a cada 20s — só actualiza se a versão remota for mais recente
-let lastSyncVersion = 0;
+// Sync a cada 30s
+let lastSync = "";
 setInterval(async()=>{
   try{
-    const r = await fetch(API_URL+"/latest",{headers:{"X-Master-Key":API_KEY}});
+    const r = await fetch(SB_API+"?id=eq.estado&select=dados,updated_at", {headers:SB_HDR});
     if(!r.ok) return;
     const j = await r.json();
-    const v = j.metadata?.version||0;
-    if(v > lastSyncVersion){
-      lastSyncVersion = v;
-      const d = j.record;
-      if(d && d.players && d.preds){
-        state.players = d.players;
-        state.preds   = {p1:d.preds.p1||{}, p2:d.preds.p2||{}};
-        state.results = d.results||{};
-        state.rules   = d.rules||state.rules;
-        render();
-      }
+    if(!j||!j.length) return;
+    const ts = j[0].updated_at;
+    if(ts === lastSync) return;
+    lastSync = ts;
+    const d = j[0].dados;
+    if(d && d.players){
+      state.players = d.players;
+      state.preds   = {p1:d.preds?.p1||{}, p2:d.preds?.p2||{}};
+      state.results = d.results||{};
+      state.rules   = d.rules||state.rules;
+      render();
+      setSync("🔄 Sincronizado");
+      setTimeout(()=>setSync(""),2000);
     }
   } catch(e){}
-}, 20000);
+}, 30000);
 
-// ── PONTUAÇÃO ────────────────────────────────────────────────────────────────
+// ── PONTUAÇÃO // ── PONTUAÇÃO // ── PONTUAÇÃO ────────────────────────────────────────────────────────────────
 function scoreIt(pred,actual,rules){
   if(!actual||actual.home==null||actual.away==null)return null;
   if(!pred||pred.home==null||pred.away==null||pred.home===""||pred.away==="")return 0;
