@@ -417,18 +417,32 @@ const BRACKET = {
 
 const DEFAULT_RULES={exact:13,drawNoExact:8,winnerPlus:8,winnerOnly:7,koMult:1};
 const LOCK_MS=5*60*1000;
-let state={players:{p1:"Pinscher",p2:"Mamute"},preds:{p1:{m01:{home:2,away:1},m02:{home:1,away:1},m03:{home:2,away:0},m04:{home:0,away:3},m05:{home:0,away:3},m06:{home:1,away:1}},p2:{m01:{home:1,away:1},m02:{home:1,away:2},m03:{home:1,away:0},m04:{home:0,away:2},m05:{home:0,away:2},m06:{home:1,away:1}}},results:{m01:{home:2,away:0},m02:{home:2,away:1},m03:{home:1,away:1},m04:{home:4,away:1},m05:{home:1,away:1}},rules:{...DEFAULT_RULES}};
+let state={players:{p1:"Pinscher",p2:"Mamute"},preds:{p1:{m01:{home:2,away:1},m02:{home:1,away:1},m03:{home:2,away:0},m04:{home:0,away:3},m05:{home:0,away:3},m06:{home:1,away:1},m07:{home:0,away:2}},p2:{m01:{home:1,away:1},m02:{home:1,away:2},m03:{home:1,away:0},m04:{home:0,away:2},m05:{home:0,away:2},m06:{home:1,away:1},m07:{home:0,away:2}}},results:{m01:{home:2,away:0},m02:{home:2,away:1},m03:{home:1,away:1},m04:{home:4,away:1},m05:{home:1,away:1}},rules:{...DEFAULT_RULES}};
 let activePlayer=null,currentTab="grupos",adminOpen=false,pendingSave=null;
 
 // ── JSONBIN ──────────────────────────────────────────────────────────────────
 async function loadState(){
   setSync("A carregar…");
-  try{const r=await fetch(`${API_URL}/latest`,{headers:{"X-Master-Key":API_KEY}});const j=await r.json();applyR(j.record);setSync("");}
-  catch(e){setSync("⚠️ Sem ligação");}
+  try{
+    const r=await fetch(`${API_URL}/latest`,{headers:{"X-Master-Key":API_KEY}});
+    const j=await r.json();
+    const d=j.record;
+    // Só aplica se tiver dados reais (players definidos e diferentes do default vazio)
+    if(d && d.players && d.preds && !d.bolao){
+      if(d.players)state.players=d.players;
+      if(d.preds)state.preds={p1:d.preds.p1||{},p2:d.preds.p2||{}};
+      if(d.results)state.results=d.results;
+      if(d.rules)state.rules=d.rules;
+    } else {
+      // JSONBin vazio ou com dado inicial — guarda o estado inicial imediatamente
+      await saveState();
+    }
+    setSync("");
+  }catch(e){setSync("⚠️ Sem ligação");}
   render();
 }
 function applyR(d){
-  if(!d||d.bolao===true)return; // ignora vazio
+  if(!d||d.bolao===true)return;
   if(d.players)state.players=d.players;
   if(d.preds)state.preds={p1:d.preds.p1||{},p2:d.preds.p2||{}};
   if(d.results)state.results=d.results;
@@ -436,12 +450,22 @@ function applyR(d){
 }
 async function saveState(){
   setSync("A guardar…");
-  try{await fetch(API_URL,{method:"PUT",headers:{"Content-Type":"application/json","X-Master-Key":API_KEY},body:JSON.stringify(state)});setSync("✓ Guardado");setTimeout(()=>setSync(""),2000);}
-  catch(e){setSync("⚠️ Erro");}
+  try{
+    await fetch(API_URL,{method:"PUT",headers:{"Content-Type":"application/json","X-Master-Key":API_KEY},body:JSON.stringify(state)});
+    setSync("✓ Guardado");
+    setTimeout(()=>setSync(""),2000);
+  }catch(e){setSync("⚠️ Erro ao guardar");}
 }
-function scheduleSave(){if(pendingSave)clearTimeout(pendingSave);pendingSave=setTimeout(saveState,800);}
+function scheduleSave(){if(pendingSave)clearTimeout(pendingSave);pendingSave=setTimeout(saveState,500);}
 function setSync(m){document.getElementById("syncbar").textContent=m;}
-setInterval(async()=>{try{const r=await fetch(`${API_URL}/latest`,{headers:{"X-Master-Key":API_KEY}});const j=await r.json();applyR(j.record);render();}catch(e){}},15000);
+setInterval(async()=>{
+  try{
+    const r=await fetch(`${API_URL}/latest`,{headers:{"X-Master-Key":API_KEY}});
+    const j=await r.json();
+    const d=j.record;
+    if(d&&d.players&&!d.bolao){applyR(d);render();}
+  }catch(e){}
+},15000);
 
 // ── PONTUAÇÃO ────────────────────────────────────────────────────────────────
 function scoreIt(pred,actual,rules){
